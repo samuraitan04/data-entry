@@ -1,61 +1,42 @@
-from http.server import HTTPServer, SimpleHTTPRequestHandler
-import json
+from flask import Flask, send_file, request, send_from_directory
 import csv
 import os
+from io import StringIO
 
-class CSVHandler(SimpleHTTPRequestHandler):
-    def end_headers(self):
-        # Enable CORS
-        self.send_header('Access-Control-Allow-Origin', '*')
-        self.send_header('Access-Control-Allow-Methods', 'GET, POST, OPTIONS')
-        self.send_header('Access-Control-Allow-Headers', 'Content-Type')
-        SimpleHTTPRequestHandler.end_headers(self)
+app = Flask(__name__)
 
-    def do_OPTIONS(self):
-        self.send_response(200)
-        self.end_headers()
+# Enable CORS
+@app.after_request
+def after_request(response):
+    response.headers.add('Access-Control-Allow-Origin', '*')
+    response.headers.add('Access-Control-Allow-Headers', 'Content-Type')
+    response.headers.add('Access-Control-Allow-Methods', 'GET,POST,OPTIONS')
+    return response
 
-    def do_GET(self):
-        if self.path == '/employee_data.csv':
-            try:
-                with open('employee_data.csv', 'r') as file:
-                    self.send_response(200)
-                    self.send_header('Content-type', 'text/csv')
-                    self.end_headers()
-                    self.wfile.write(file.read().encode())
-            except FileNotFoundError:
-                # If file doesn't exist, create it with headers
-                with open('employee_data.csv', 'w') as file:
-                    writer = csv.writer(file)
-                    writer.writerow(['Employee ID', 'Name', 'Gender', 'Department', 'Salary', 'Address', 'Timestamp'])
-                self.send_response(200)
-                self.send_header('Content-type', 'text/csv')
-                self.end_headers()
-                self.wfile.write(b'Employee ID,Name,Gender,Department,Salary,Address,Timestamp\n')
-        else:
-            return SimpleHTTPRequestHandler.do_GET(self)
+@app.route('/')
+def serve_index():
+    return send_from_directory('.', 'index.html')
 
-    def do_POST(self):
-        if self.path == '/save_csv':
-            content_length = int(self.headers['Content-Length'])
-            post_data = self.rfile.read(content_length)
-            csv_content = post_data.decode('utf-8')
+@app.route('/<path:path>')
+def serve_static(path):
+    return send_from_directory('.', path)
 
-            with open('employee_data.csv', 'w') as file:
-                file.write(csv_content)
+@app.route('/employee_data.csv')
+def get_csv():
+    try:
+        return send_file('employee_data.csv', mimetype='text/csv')
+    except FileNotFoundError:
+        # Create new CSV file with headers
+        headers = ['Employee ID', 'Name', 'Gender', 'Department', 'Salary', 'Address', 'Timestamp']
+        csv_content = ','.join(headers) + '\n'
+        return csv_content, 200, {'Content-Type': 'text/csv'}
 
-            self.send_response(200)
-            self.send_header('Content-type', 'text/plain')
-            self.end_headers()
-            self.wfile.write(b'Data saved successfully')
-            return
-
-def run_server():
-    port = 8000
-    server_address = ('', port)
-    httpd = HTTPServer(server_address, CSVHandler)
-    print(f'Server running on port {port}...')
-    httpd.serve_forever()
+@app.route('/save_csv', methods=['POST'])
+def save_csv():
+    csv_content = request.data.decode('utf-8')
+    with open('employee_data.csv', 'w') as file:
+        file.write(csv_content)
+    return 'Data saved successfully'
 
 if __name__ == '__main__':
-    run_server() 
+    app.run(host='0.0.0.0', port=int(os.environ.get('PORT', 8000))) 
